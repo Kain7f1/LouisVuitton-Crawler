@@ -1,6 +1,7 @@
 #############################
 # 만든이 : Kain7f1 (Hansol Lee)
 # 생성일 : 2024-12-16
+# 사용 전제 조건 : C:\Users 폴더에 현재 크롬 버전에 맞는 chromedriver.exe를 다운받아주세요
 # 목적 : 크롤링 및 정보 엑셀에 저장 - "https://kr.louisvuitton.com/kor-kr/women/handbags/_/N-tfr7qdp"
 # 요구사항 1 - 모든 상품 정보 엑셀로 저장 : 1. 상품명 / 2. 가격 / 3. 상품 링크 URL / 4. 이미지 URL
 # 요구사항 2 - 페이지 군데군데 더보기 버튼을 눌러 모든 상품을 로딩 후 크롤링 작업 시작
@@ -8,15 +9,36 @@
 #############################
 
 from datetime import datetime
-import crawling_tool as cr
 import pandas as pd
-import traceback
 import time
-import re
+from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+
+# 기능 : 크롬 driver 옵션을 설정하고 반환합니다
+def get_driver():
+    CHROME_DRIVER_PATH = "C:/Users/chromedriver.exe"    # (절대경로) Users 폴더에 chromedriver.exe를 설치했음
+    options = webdriver.ChromeOptions()                 # 옵션 선언
+    # [옵션 설정]
+    options.add_argument("--start-maximized")         # 창이 최대화 되도록 열리게 한다.
+    # options.add_argument("--headless")                  # 창이 없이 크롬이 실행이 되도록 만든다
+
+    options.add_argument("disable-infobars")            # 안내바가 없이 열리게 한다.
+    options.add_argument("disable-gpu")                 # 크롤링 실행시 GPU를 사용하지 않게 한다.
+    options.add_argument("--disable-dev-shm-usage")     # 공유메모리를 사용하지 않는다
+    options.add_argument("--blink-settings=imagesEnabled=false")    # 이미지 로딩 비활성화
+    options.add_argument('--disk-cache-dir=/path/to/cache-dir')     # 캐시 사용 활성화
+    options.page_load_strategy = 'none'             # 전체 페이지가 완전히 로드되기를 기다리지 않고 다음 작업을 수행 (중요)
+    options.add_argument('--log-level=3')           # 웹 소켓을 통한 로그 메시지 비활성화
+    options.add_argument('--no-sandbox')            # 브라우저 프로파일링 비활성화
+    options.add_argument('--disable-plugins')       # 다양한 플러그인 및 기능 비활성화
+    options.add_argument('--disable-extensions')    # 다양한 플러그인 및 기능 비활성화
+    options.add_argument('--disable-sync')          # 다양한 플러그인 및 기능 비활성화
+    driver = webdriver.Chrome(CHROME_DRIVER_PATH, options=options)
+    return driver
 
 
 def crawl_lv(url):
@@ -37,7 +59,7 @@ def crawl_lv(url):
     # 프로세스 3 - 모든 정보 불러와서 엑셀 형태로 저장
 
     print("[크롬 드라이버 세팅중]")
-    driver = cr.get_driver()  # 크롬 웹드라이버. header, 드라이버 옵션 미리 설정해 두었음
+    driver = get_driver()  # 크롬 웹드라이버. 드라이버 옵션 미리 설정해 두었음
     driver.get("https://kr.louisvuitton.com/kor-kr/women/handbags/_/N-tfr7qdp")  # 타겟 url : 루이비통
     print("[크롬 드라이버 세팅 완료]")
 
@@ -57,17 +79,17 @@ def crawl_lv(url):
 
     print("[프로세스 2 - 모든 더보기 버튼 클릭]")
     max_group_count = 9  # 더보기 버튼 갯수 = 제품군의 갯수
-    for j in range(1, max_group_count+1):
+    for group_count in range(1, max_group_count+1):
         # 버튼클릭
-        print(f"{j}번째 더보기 버튼 클릭")
+        print(f"{group_count}번째 더보기 버튼 클릭")
         try:
             button = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located(
-                    (By.XPATH, f"/html/body/div[1]/div/div/main/div/div[3]/ul/li[{j}]/div/div/button"))
+                    (By.XPATH, f"/html/body/div[1]/div/div/main/div/div[3]/ul/li[{group_count}]/div/div/button"))
             )
             # Javascript를 사용하여 버튼 클릭
             driver.execute_script("arguments[0].click();", button)
-            print(f"{j}번쨰 더보기 버튼 클릭 성공!")
+            print(f"{group_count}번쨰 더보기 버튼 클릭 성공!")
 
         except Exception as e:
             print(f"더보기 버튼 클릭 실패 ㅠㅠ: {e}")
@@ -105,7 +127,8 @@ def crawl_lv(url):
                 # 1. 제품명, 3. 제품 링크 URL
                 product_info_element = WebDriverWait(driver, 5).until(
                     EC.presence_of_element_located((By.XPATH, product_info_xpath))
-                )
+                )  # 최대 5초 동안 `product_info_xpath` XPath에 해당하는 요소가 로드될 때까지 기다리고, 찾은 요소를 저장함.
+
                 product_url = product_info_element.get_attribute("href")  # 3. 제품 링크 URL
                 print(f"Product_url: {product_url}")
                 product_name = product_info_element.text  # 1. 제품명
@@ -113,7 +136,7 @@ def crawl_lv(url):
 
                 # 2. 가격
                 price_element = WebDriverWait(driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, price_xpath))
+                    EC.presence_of_element_located((By.XPATH, price_xpath))  # XPATH로 로드 : 가격 정보
                 )
                 price = price_element.text  # 2. 가격
                 price = price[1:]  # 원화기호 제거
@@ -141,12 +164,9 @@ def crawl_lv(url):
     df = pd.DataFrame(data, columns=["product_name", "price", "product_url", "image_url"])
 
     # 엑셀 파일로 저장
-    excel_file_name = f"product_{str_start_time}.csv"
+    excel_file_name = f"product_{str_start_time}.csv"   # 엑셀 파일 이름. 시작시간을 덧붙어 unique하게 만들어 여러번 실행해도 파일이 덧씌워지지 않음.
     df.to_csv(excel_file_name, encoding="ANSI", index=False)  # 한글로 보이도록 인코딩 ANSI로 설정
-
     print(f"데이터가 {excel_file_name} 파일로 저장되었습니다.")
 
     print("[프로세스 3 완료]")
-
     print("crawl_lv() 종료")
-    driver.quit()
